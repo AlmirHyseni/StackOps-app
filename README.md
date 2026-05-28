@@ -17,6 +17,8 @@ MONGODB_URI=mongodb+srv://USER:PASSWORD@cluster.example.mongodb.net/?retryWrites
 MONGODB_DB=stackops
 ```
 
+Pa `.env.local` me vlera te sakta, API do ktheje error sepse aplikacioni perdor vetem MongoDB.
+
 ## Nisja e projektit
 
 ```bash

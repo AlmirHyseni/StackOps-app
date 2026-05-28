@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/mongodb";
+import { getDbContext } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 
 function getErrorMessage(error: unknown): string {
@@ -9,7 +9,7 @@ function getErrorMessage(error: unknown): string {
 // 1. GET: Lexon te gjitha resurset aktive te infrastruktures
 export async function GET() {
   try {
-    const db = await getDb();
+    const { db } = await getDbContext();
     // Marrim resurset qe nuk jane shkaterruar ende dhe i rendisim nga me te rejat
     const resources = await db
       .collection("resources")
@@ -29,7 +29,7 @@ export async function GET() {
 // 2. POST: Simulon "IaC Apply" (Krijon resursin ne Cloud/Database)
 export async function POST(request: Request) {
   try {
-    const db = await getDb();
+    const { db } = await getDbContext();
     const body = (await request.json()) as { name?: string; type?: string };
 
     if (!body.name || !body.type) {
@@ -49,7 +49,10 @@ export async function POST(request: Request) {
     const result = await db.collection("resources").insertOne(newResource);
 
     return NextResponse.json(
-      { success: true, data: { ...newResource, _id: result.insertedId } },
+      {
+        success: true,
+        data: { ...newResource, _id: result.insertedId },
+      },
       { status: 201 }
     );
   } catch (error) {
@@ -63,7 +66,7 @@ export async function POST(request: Request) {
 // 3. DELETE: Simulon "IaC Destroy" (Fshin resursin specifik me ID)
 export async function DELETE(request: Request) {
   try {
-    const db = await getDb();
+    const { db } = await getDbContext();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 
@@ -84,7 +87,10 @@ export async function DELETE(request: Request) {
     await db.collection("resources").deleteOne({ _id: new ObjectId(id) });
 
     return NextResponse.json(
-      { success: true, message: "Resursi u shkaterrua me sukses (Destroyed)" },
+      {
+        success: true,
+        message: "Resursi u shkaterrua me sukses (Destroyed)",
+      },
       { status: 200 }
     );
   } catch (error) {

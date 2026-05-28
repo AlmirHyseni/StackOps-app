@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/mongodb";
+import { getDbContext } from "@/lib/mongodb";
 
 type CreateTaskBody = {
   title?: string;
@@ -6,7 +6,7 @@ type CreateTaskBody = {
 
 export async function GET() {
   try {
-    const db = await getDb();
+    const { db, source } = await getDbContext();
     const taskDocuments = await db
       .collection("tasks")
       .find({}, { projection: { title: 1, createdAt: 1 } })
@@ -23,7 +23,7 @@ export async function GET() {
           : new Date().toISOString(),
     }));
 
-    return Response.json({ tasks }, { status: 200 });
+    return Response.json({ tasks, source }, { status: 200 });
   } catch {
     return Response.json(
       { error: "Nuk u arrit leximi i task-eve." },
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const db = await getDb();
+    const { db, source } = await getDbContext();
     const now = new Date();
     const result = await db.collection("tasks").insertOne({
       title,
@@ -58,6 +58,7 @@ export async function POST(request: Request) {
           title,
           createdAt: now.toISOString(),
         },
+        source,
       },
       { status: 201 }
     );

@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Modal from "./components/Modal";
+import Toasts, { ToastItem } from "./components/Toast";
+import Spinner from "./components/Spinner";
 
 interface Resource {
   _id: string;
@@ -16,14 +19,40 @@ export default function Home() {
   const [type, setType] = useState("Compute (EC2)");
   const [loading, setLoading] = useState(false);
   const [fetchLoading, setFetchLoading] = useState(true);
+  const [infoModalOpen, setInfoModalOpen] = useState(false);
+  const [infoMessage, setInfoMessage] = useState("");
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [confirmMessage, setConfirmMessage] = useState("");
+  const [confirmAction, setConfirmAction] = useState<(() => Promise<void>) | null>(null);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  const addToast = (message: string, type: ToastItem["type"] = "info") => {
+    const id = String(Date.now()) + Math.random().toString(36).slice(2, 7);
+    const t: ToastItem = { id, message, type };
+    setToasts((s) => [t, ...s]);
+    setTimeout(() => setToasts((s) => s.filter((x) => x.id !== id)), 4000);
+  };
+
+  const removeToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
+
+  const readJson = async <T,>(res: Response): Promise<T> => {
+    const contentType = res.headers.get("content-type") ?? "";
+
+    if (!contentType.includes("application/json")) {
+      const body = await res.text();
+      throw new Error(`Expected JSON response, received ${contentType || "unknown content type"}: ${body.slice(0, 120)}`);
+    }
+
+    return (await res.json()) as T;
+  };
 
   // 1. Lexo resurset nga MongoDB (IaC State)
   const fetchResources = async () => {
     try {
       const res = await fetch("/api/resources");
-      const data = await res.json();
+      const data = await readJson<{ success?: boolean; data?: Resource[] }>(res);
       if (data.success) {
-        setResources(data.data);
+        setResources(data.data ?? []);
       }
     } catch (error) {
       console.error("Gabim gjatë marrjes së të dhënave:", error);
@@ -43,7 +72,11 @@ export default function Home() {
   // 2. Simulimi i "terraform apply" (Krijimi)
   const handleApply = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return alert("Ju lutem jepni një emër resursi!");
+    if (!name.trim()) {
+      setInfoMessage("Ju lutem jepni një emër resursi!");
+      setInfoModalOpen(true);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -52,34 +85,44 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, type }),
       });
-      const data = await res.json();
+      const data = await readJson<{ success?: boolean }>(res);
 
       if (data.success) {
         setName("");
         fetchResources(); // Rifresko listën
+          addToast("Resursi u krijua me sukses.", "success");
       }
     } catch (error) {
       console.error("Gabim gjatë krijimit:", error);
+        addToast("Gabim gjatë krijimit të burimit.", "error");
     } finally {
       setLoading(false);
     }
   };
 
   // 3. Simulimi i "terraform destroy" (Fshirja)
-  const handleDestroy = async (id: string) => {
-    if (!confirm("A jeni i sigurt që dëshironi ta shkatërroni këtë resurs? (IaC Destroy)")) return;
-
+  const performDestroy = async (id: string) => {
     try {
       const res = await fetch(`/api/resources?id=${id}`, {
         method: "DELETE",
       });
-      const data = await res.json();
+      const data = await readJson<{ success?: boolean }>(res);
       if (data.success) {
         fetchResources(); // Rifresko listën
+        addToast("Resursi u fshi.", "success");
       }
     } catch (error) {
       console.error("Gabim gjatë fshirjes:", error);
+      addToast("Gabim gjatë fshirjes së burimit.", "error");
     }
+  };
+
+  const handleDestroy = (id: string) => {
+    setConfirmMessage("A jeni i sigurt që dëshironi ta shkatërroni këtë resurs? (IaC Destroy)");
+    setConfirmAction(() => async () => {
+      await performDestroy(id);
+    });
+    setConfirmModalOpen(true);
   };
 
   return (
@@ -137,9 +180,16 @@ export default function Home() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-medium text-sm py-2.5 rounded-lg transition-all shadow-lg shadow-cyan-950 disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-medium text-sm py-2.5 rounded-lg transition-all shadow-lg shadow-cyan-950 disabled:opacity-50"
             >
-              {loading ? "Planimetria po dërgohet..." : "🚀 Run IaC Apply"}
+              {loading ? (
+                <>
+                  <Spinner size={16} />
+                  <span>Planimetria po dërgohet...</span>
+                </>
+              ) : (
+                "🚀 Run IaC Apply"
+              )}
             </button>
           </form>
         </div>
@@ -206,6 +256,32 @@ export default function Home() {
           )}
         </div>
       </main>
+      <Modal
+        isOpen={infoModalOpen}
+        title="Vërejtje"
+        message={infoMessage}
+        onClose={() => setInfoModalOpen(false)}
+        onConfirm={() => setInfoModalOpen(false)}
+        confirmText="Ok"
+        showCancel={false}
+      />
+
+      <Modal
+        isOpen={confirmModalOpen}
+        title="Konfirmim"
+        message={confirmMessage}
+        onClose={() => setConfirmModalOpen(false)}
+        onConfirm={async () => {
+          await confirmAction?.();
+          setConfirmModalOpen(false);
+          setConfirmAction(null);
+        }}
+        confirmText="Po, shkatërro"
+        cancelText="Anulo"
+        showCancel={true}
+      />
+
+      <Toasts toasts={toasts} onRemove={removeToast} />
     </div>
   );
 }
